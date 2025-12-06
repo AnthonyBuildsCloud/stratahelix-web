@@ -1,170 +1,136 @@
-"use client";
-
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
-type PackageId = "snapshot" | "core" | "methylation-plus" | "elite";
+type PackageId = "core" | "methylation-plus" | "elite";
 
-const PACKAGE_COPY: Record<
+const PACKAGE_CONTENT: Record<
   PackageId,
-  {
-    title: string;
-    subtitle: string;
-    bullets: string[];
-  }
+  { name: string; description: string; bullets: string[] }
 > = {
-  snapshot: {
-    title: "Your StrataHelix Snapshot is ready.",
-    subtitle:
-      "You’ve unlocked a free preview report so you can see how StrataHelix interprets your DNA. Upload your file to generate your Snapshot.",
-    bullets: [
-      "Quick, non-medical overview of key genetic tendencies.",
-      "3–5 simple, low-risk lifestyle levers to experiment with.",
-      "Designed as a gateway into deeper StrataHelix tiers.",
-    ],
-  },
   core: {
-    title: "Your StrataHelix Core report is confirmed.",
-    subtitle:
-      "Thank you for choosing the StrataHelix Core report. Next, upload your raw DNA file so we can generate your baseline wellness blueprint.",
+    name: "Core",
+    description:
+      "You’ll receive a non-medical, educational report based on your raw DNA. No disease diagnoses, no lab orders, no treatment recommendations.",
     bullets: [
-      "Metabolism, training response, recovery, sleep, and mood tendencies.",
-      "Clear, non-medical insights with practical lifestyle and training ideas.",
-      "High-level supplement categories aligned with your genetic profile.",
+      "Baseline wellness blueprint across metabolism, training response, recovery, sleep, and stress.",
+      "Clear, practical levers to test in your nutrition, training, and lifestyle.",
+      "Designed to plug into your existing routine without needing new lab work.",
     ],
   },
   "methylation-plus": {
-    title: "Your Methylation+ Performance report is confirmed.",
-    subtitle:
-      "You’ve unlocked deeper methylation and performance-focused analysis. Upload your raw DNA file so we can build your Methylation+ blueprint.",
+    name: "Methylation+ Performance",
+    description:
+      "Adds deeper analysis of methylation-related genes and performance recovery patterns, with more detailed supplement strategy.",
     bullets: [
-      "Core coverage plus an added focus on methylation and recovery pathways.",
-      "Contextual, plain-language discussion of methylation-related genes (including MTHFR-style patterns) without medical diagnoses.",
-      "Prioritized focus areas for training, recovery, and supplement categories.",
+      "Expanded methylation and detox lens (including common MTHFR patterns).",
+      "Performance- and recovery-focused recommendations for lifters and athletes.",
+      "More specific supplement architecture (non-medical, educational only).",
     ],
   },
   elite: {
-    title: "Your StrataHelix Elite report is confirmed.",
-    subtitle:
-      "You’ve unlocked the full-stack Elite blueprint. Upload your raw DNA file so we can generate your high-resolution performance and longevity map.",
+    name: "Elite",
+    description:
+      "Full-stack StrataHelix blueprint with recovery, cardio-metabolic focus, and detailed supplement stack layouts.",
     bullets: [
-      "Everything in Core and Methylation+, plus cardio-metabolic and recovery depth.",
-      "Strategic ‘daily rhythm’ guidance (AM, pre-training, PM) in non-medical language.",
-      "Refined supplement category priorities and stack-structure suggestions.",
+      "Highest-resolution view across metabolic health, training, recovery, and sleep.",
+      "Supplement stack layouts organized by goal (energy, recovery, focus, resilience).",
+      "Best suited for serious self-optimizers who track data and want a deep roadmap.",
     ],
   },
 };
 
-export default function SuccessPage() {
-  const searchParams = useSearchParams();
-  const pkgParam = (searchParams.get("pkg") as PackageId | null) ?? "core";
+// Tell Next.js this route is dynamic so it won't try to fully pre-render it
+export const dynamic = "force-dynamic";
 
-  // Fall back safely if unknown pkg hits this page
-  const pkg: PackageId =
-    pkgParam && (["snapshot", "core", "methylation-plus", "elite"] as const).includes(pkgParam)
-      ? pkgParam
-      : "core";
+type SuccessPageProps = {
+  searchParams: { pkg?: string };
+};
 
-  const info = PACKAGE_COPY[pkg];
-  const uploadHref = `/upload?pkg=${pkg}&paid=1`;
+export default function SuccessPage({ searchParams }: SuccessPageProps) {
+  const rawPkg = (searchParams.pkg as PackageId | undefined) ?? "core";
+  const validIds: PackageId[] = ["core", "methylation-plus", "elite"];
+  const pkg: PackageId = validIds.includes(rawPkg) ? rawPkg : "core";
 
-  const tierLabel =
-    pkg === "snapshot"
-      ? "Snapshot"
-      : pkg === "core"
-      ? "Core"
-      : pkg === "methylation-plus"
-      ? "Methylation+ Performance"
-      : "Elite";
+  const content = PACKAGE_CONTENT[pkg];
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-16 space-y-10">
-      <section className="space-y-4">
-        <p className="text-xs font-semibold tracking-[0.22em] text-[#27E0C0] uppercase">
+    <div className="mx-auto max-w-4xl px-4 py-12 space-y-8">
+      {/* HEADER */}
+      <section className="space-y-2">
+        <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-[#27E0C0]">
           Payment confirmed
         </p>
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
-          {info.title}
+          Your StrataHelix {content.name} report is confirmed.
         </h1>
-        <p className="text-sm sm:text-base text-[#9CA3AF] max-w-3xl">
-          {info.subtitle}
+        <p className="text-sm text-[#9CA3AF] max-w-2xl">
+          Thank you for choosing the {content.name} tier. Next, upload your raw
+          DNA file so we can generate your AI-guided, non-medical wellness
+          blueprint based on your genetics.
         </p>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] items-start">
-        {/* Left: Tier card */}
-        <div className="rounded-xl border border-[#020617] bg-[#020617]">
-          <div className="border-b border-[#111827] px-6 py-4">
-            <p className="text-[11px] font-medium tracking-[0.18em] text-[#6B7280] uppercase">
-              Selected tier
-            </p>
-            <p className="mt-1 text-lg font-semibold text-[#F9FAFB]">{tierLabel}</p>
-            <p className="mt-1 text-[11px] text-[#9CA3AF]">
-              You’ll receive a non-medical, educational report based on your raw DNA.
-              No disease diagnoses, no lab orders, no treatment recommendations.
-            </p>
-          </div>
-
-          <div className="px-6 py-5 space-y-3">
-            <p className="text-xs font-semibold text-[#D1D5DB]">
-              What happens next
-            </p>
-            <ul className="space-y-2 text-[11px] text-[#9CA3AF]">
-              {info.bullets.map((b, idx) => (
-                <li key={idx} className="flex gap-2">
-                  <span className="mt-[2px] h-[5px] w-[5px] rounded-full bg-[#27E0C0]" />
-                  <span>{b}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        {/* Right: Actions */}
-        <div className="space-y-4 rounded-xl border border-[#1F2933] bg-[#020617] px-6 py-5">
-          <p className="text-xs font-semibold text-[#D1D5DB]">
-            Upload your DNA to generate the report
+      {/* SELECTED TIER CARD */}
+      <section className="rounded-xl border border-[#1F2933] bg-[#020617] p-6 space-y-4">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#6B7280]">
+          Selected tier
+        </h2>
+        <div className="space-y-2">
+          <p className="text-lg font-semibold text-[#F9FAFB]">
+            {content.name}
           </p>
-          <ol className="space-y-2 text-[11px] text-[#9CA3AF]">
-            <li>
-              <span className="font-semibold text-[#F9FAFB]">1.</span>{" "}
-              Download your raw DNA file from 23andMe, AncestryDNA, or another supported
-              platform.
-            </li>
-            <li>
-              <span className="font-semibold text-[#F9FAFB]">2.</span>{" "}
-              Go to the upload page and submit your raw DNA file. We’ll validate the
-              file and hand it off to the StrataHelix AI engine.
-            </li>
-            <li>
-              <span className="font-semibold text-[#F9FAFB]">3.</span>{" "}
-              You’ll receive your report as a structured, AI-generated browser report
-              (and later optional PDF) depending on your tier.
-            </li>
-          </ol>
-
-          <div className="flex flex-wrap gap-3 pt-2">
-            <Link
-              href={uploadHref}
-              className="inline-flex flex-1 items-center justify-center rounded-md bg-[#27E0C0] px-4 py-2.5 text-sm font-medium text-[#020617] hover:opacity-90 transition"
-            >
-              Go to upload page
-            </Link>
-            <Link
-              href="/"
-              className="inline-flex items-center justify-center rounded-md border border-[#374151] px-4 py-2.5 text-sm font-medium text-[#F9FAFB] hover:border-[#27E0C0]/70 transition"
-            >
-              Back to homepage
-            </Link>
-          </div>
-
-          <p className="text-[10px] text-[#6B7280] pt-1">
-            If you reached this page by accident or have questions about your purchase,
-            please contact support. All StrataHelix reports are for educational and
-            informational purposes only and are not a substitute for medical advice.
-          </p>
+          <p className="text-sm text-[#9CA3AF]">{content.description}</p>
+          <ul className="mt-3 space-y-1 text-xs text-[#9CA3AF] list-disc list-inside">
+            {content.bullets.map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ul>
         </div>
       </section>
+
+      {/* WHAT HAPPENS NEXT */}
+      <section className="space-y-3 text-sm text-[#9CA3AF]">
+        <h2 className="text-sm font-semibold text-[#F9FAFB]">
+          What happens next
+        </h2>
+        <ol className="list-decimal list-inside space-y-1">
+          <li>
+            Make sure you have your raw DNA file downloaded from 23andMe,
+            AncestryDNA, or another supported platform.
+          </li>
+          <li>
+            Go to the upload page and submit your raw DNA file with this tier so
+            we can start generating your StrataHelix report.
+          </li>
+          <li>
+            You&apos;ll receive your report as a structured, AI-generated
+            browser experience or downloadable file depending on your package.
+          </li>
+        </ol>
+      </section>
+
+      {/* ACTION BUTTONS */}
+      <div className="flex flex-wrap gap-3">
+        <Link
+          href={`/upload?pkg=${pkg}`}
+          className="inline-flex items-center justify-center rounded-md bg-[#27E0C0] px-5 py-2.5 text-sm font-medium text-[#0B1014] hover:opacity-90 transition"
+        >
+          Go to upload page
+        </Link>
+        <Link
+          href="/"
+          className="inline-flex items-center justify-center rounded-md border border-[#1F2933] px-5 py-2.5 text-sm font-medium text-[#F9FAFB] hover:border-[#27E0C0]/80 hover:bg-[#020617] transition"
+        >
+          Back to homepage
+        </Link>
+      </div>
+
+      {/* DISCLAIMER */}
+      <p className="text-[11px] text-[#6B7280] max-w-2xl">
+        If you reached this page by accident or have questions about your
+        purchase, please contact support. All StrataHelix reports are for
+        educational and informational purposes only and are not a substitute for
+        medical advice.
+      </p>
     </div>
   );
 }
