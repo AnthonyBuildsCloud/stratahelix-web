@@ -1,19 +1,32 @@
 import { Suspense } from "react";
 import UploadClientPage from "./UploadClientPage";
 
-// Optional but helpful to avoid static export issues on this route
-export const dynamic = "force-dynamic";
+type PackageId = "snapshot" | "core" | "methylation" | "elite";
 
-export default function UploadPage() {
+type UploadPageProps = {
+  searchParams?: {
+    pkg?: string | string[];
+  };
+};
+
+export default function UploadPage({ searchParams }: UploadPageProps) {
+  const pkgParam = searchParams?.pkg;
+
+  let initialPackage: PackageId = "snapshot";
+
+  if (pkgParam === "core" || pkgParam === "methylation" || pkgParam === "elite") {
+    initialPackage = pkgParam;
+  }
+
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center text-slate-200">
-          Preparing upload flow...
+        <div className="text-slate-300 p-8">
+          Loading upload flow…
         </div>
       }
     >
-      <UploadClientPage />
+      <UploadClientPage initialPackage={initialPackage} />
     </Suspense>
   );
 }
