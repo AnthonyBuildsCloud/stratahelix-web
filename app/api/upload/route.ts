@@ -1,150 +1,119 @@
+// app/api/upload/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-export const runtime = "nodejs";
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+type PackageId = "snapshot" | "core" | "methylation-plus" | "elite";
+
+interface UploadRequestBody {
+  pkg: PackageId;
+  fileName: string;
+  fileSizeBytes: number;
+  markers: Record<string, string>; // rsid -> genotype (e.g., "rs1815739": "CC")
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const body = (await req.json()) as UploadRequestBody;
 
-    if (!apiKey) {
-      console.error("Missing OPENAI_API_KEY environment variable.");
+    const { pkg, fileName, fileSizeBytes, markers } = body ?? {};
+
+    if (!pkg || !fileName || !fileSizeBytes || !markers) {
       return NextResponse.json(
         {
           ok: false,
-          error:
-            "Server configuration error: missing OPENAI_API_KEY. Please set it in your .env.local file.",
+          error: "Missing pkg, file metadata, or markers in request body.",
         },
-        { status: 500 }
-      );
-    }
-
-    const openai = new OpenAI({ apiKey });
-
-    const formData = await req.formData();
-
-    const file = formData.get("file");
-    const pkg = (formData.get("pkg") as string | null) ?? "snapshot";
-
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json(
-        { ok: false, error: "No file uploaded or invalid file field." },
         { status: 400 }
       );
     }
 
-    const fileText = await file.text();
-    const snippet = fileText.slice(0, 10_000);
+    const markerEntries = Object.entries(markers);
 
-    const systemPrompt = `
-You are StrataHelix, an AI assistant that turns raw consumer DNA data into structured, non-medical wellness reports.
+    if (markerEntries.length === 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "No relevant genetic markers were found in the uploaded file for this package.",
+        },
+        { status: 400 }
+      );
+    }
 
-Rules:
-- DO NOT give medical advice, diagnoses, disease risk scores, or treatment recommendations.
-- DO NOT mention specific SNP IDs, genotypes, or "you have this mutation" style language.
-- Stay in the lane of lifestyle, training, nutrition, recovery, stress, sleep, and supplement *categories*.
-- Always remind the user this is educational only and not a substitute for a clinician.
-- Tone: serious biohacker / performance consultant. No fear-mongering, no childish language.
+    const markersSummary = markerEntries
+      .map(([rsid, genotype]) => `${rsid}: ${genotype}`)
+      .join("\n");
 
-Tier expectations:
-- snapshot: short, high-level preview. Executive snapshot + 3–5 bullets and 3 quick-start actions.
-- core: deeper sections for Metabolism, Training, Sleep, Stress/Mood, Supplement Categories.
-- methylation-plus: core + dedicated “Methylation & Recovery Support” section and “Priority focus areas”.
-- elite: methylation-plus + a structured “Example daily rhythm” section (AM / Training / Evening).
+    const pkgLabelMap: Record<PackageId, string> = {
+      snapshot: "Snapshot (free preview)",
+      core: "Core (baseline wellness)",
+      "methylation-plus": "Methylation+ Performance",
+      elite: "Elite (full-stack blueprint)",
+    };
 
-Goal:
-Use the DNA snippet as soft context only. You’re NOT doing clinical genetics. You’re mapping tendencies and giving structured, experiment-friendly guidance, similar in style to a professional wellness + training consultant.
-`;
+    const pkgLabel = pkgLabelMap[pkg];
 
-    const userPrompt = `
-User package tier: ${pkg}
-
-Raw DNA snippet (context only, do NOT echo this back or mention specific SNP IDs):
---------------------
-${snippet}
---------------------
-
-Using the style and structure below, generate a StrataHelix report that matches the selected tier.
-
-=== STRUCTURE GUIDELINES BY TIER ===
-
-For SNAPSHOT (pkg = "snapshot"):
-- Title: "StrataHelix Snapshot – high-level preview"
-- Section 1: Executive snapshot (2 short paragraphs)
-- Section 2: "Key tendencies we might explore" – 3–5 bullets
-- Section 3: "Quick-start experiments (non-medical)" – 3–5 simple habits
-
-For CORE (pkg = "core"):
-- Title: "StrataHelix Core DNA wellness report"
-- Intro: Short overview of this being non-medical, education-focused.
-- Section: "Metabolism & nutrition tendencies"
-- Section: "Training response & recovery"
-- Section: "Sleep, circadian rhythm & stress"
-- Section: "Focus, mood & mental performance"
-- Section: "Supplement categories to consider" (categories only, no dosages, no brand names)
-
-For METHYLATION-PLUS (pkg = "methylation-plus"):
-- Title: "StrataHelix Methylation+ Performance report"
-- Intro: Non-medical, focused on performance and recovery.
-- Include all CORE sections, plus:
-  - Section: "Methylation & recovery support (non-medical)"
-    - Explain in plain language how methylation-related patterns might influence energy, recovery, and stress handling, WITHOUT naming specific SNPs or giving diagnoses.
-    - Emphasize lifestyle levers and high-level supplement categories (e.g., “methylation-supportive B-complex”, “magnesium for recovery”).
-  - Section: "Priority focus areas" – top 3–5 themes for this user to focus on.
-
-For ELITE (pkg = "elite"):
-- Title: "StrataHelix Elite full-stack performance blueprint"
-- Intro: As above, but slightly more executive/strategic.
-- Include all METHYLATION-PLUS sections, plus:
-  - Section: "Cardio-metabolic & longevity-relevant levers" – directional, non-medical.
-  - Section: "Example daily rhythm (non-prescriptive)"
-    - Subheadings like:
-      - "Morning – prime the system"
-      - "Training window – performance & recovery"
-      - "Evening – downshift and repair"
-    - Keep this as an example schedule, not a strict protocol.
-
-Overall style:
-- Executive summary
-- Clear section titles
-- Short paragraphs and bullet lists
-- Non-medical, no references to lab values, no treatment advice
-- Address the user as a high-agency biohacker / lifter / high-performer who wants data-informed experiments.
-
-End with a short disclaimer section titled "Important context & disclaimer" that reinforces:
-- This is educational only.
-- Not a medical service.
-- Not a replacement for a doctor, diagnostics, or lab work.
-`;
+    const userPrompt = [
+      `You are StrataHelix, a non-medical DNA wellness interpreter.`,
+      `The user has uploaded a raw DNA file. The app has already extracted only the SNPs needed for the selected report tier.`,
+      "",
+      `Selected package tier: ${pkgLabel}`,
+      `Original file name: ${fileName}`,
+      `Original file size (bytes): ${fileSizeBytes}`,
+      "",
+      "Relevant SNP genotypes for this package (rsid: genotype):",
+      markersSummary,
+      "",
+      "Using ONLY this genetic information and general wellness knowledge:",
+      "- Generate a tier-appropriate, non-medical wellness report.",
+      "- Focus on metabolism, training, recovery, sleep, stress, cardio-metabolic health, and supplementation guidance, depending on the tier depth.",
+      "- Do NOT mention SNP IDs or genotypes directly in the user-facing text (keep that internal).",
+      "- Keep everything clearly non-medical: no diagnoses, no treatment, no disease risk prediction.",
+      "- For Snapshot: keep it shorter, like an executive preview.",
+      "- For Core: add more structured sections and experiments.",
+      "- For Methylation+ and Elite: go deeper on methylation, recovery, performance, and protocols.",
+    ].join("\n");
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
+      max_tokens: 1600,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        {
+          role: "system",
+          content:
+            "You are StrataHelix, a DNA-powered wellness guide. You provide structured, non-medical, experiment-focused guidance based on genetics.",
+        },
+        {
+          role: "user",
+          content: userPrompt,
+        },
       ],
-      temperature: 0.7,
-      max_tokens: 2200,
     });
 
-    const report = completion.choices[0].message.content ?? "";
+    const report =
+      completion.choices[0]?.message?.content ??
+      "AI report generation produced an empty response.";
 
     return NextResponse.json({
       ok: true,
       package: pkg,
-      fileName: file.name,
-      fileSizeBytes: file.size,
+      fileName,
+      fileSizeBytes,
+      markersUsedCount: markerEntries.length,
       report,
       message:
-        "DNA file received and AI report draft generated. This is a non-medical, educational DNA wellness summary.",
+        "DNA markers received and AI report draft generated successfully.",
     });
   } catch (error) {
     console.error("Upload API error:", error);
     return NextResponse.json(
       {
         ok: false,
-        error:
-          "Unexpected server error while handling upload. Check server logs for details.",
+        error: "Unexpected server error while handling upload.",
       },
       { status: 500 }
     );
