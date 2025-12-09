@@ -1,321 +1,307 @@
 "use client";
 
-import { useState, FormEvent, ChangeEvent } from "react";
+import React, { useState, FormEvent } from "react";
+import type { PackageId } from "@/types/packages";
 
-export type PackageId = "snapshot" | "core" | "methylation-plus" | "elite";
-
-const PACKAGES: {
-  id: PackageId;
-  name: string;
-  price: string;
-  blurb: string;
-}[] = [
-  {
-    id: "snapshot",
-    name: "Snapshot",
+// Simple tier metadata – adjust copy/prices as you like
+const PACKAGE_DETAILS: Record<PackageId, { 
+  label: string; 
+  price: string; 
+  description: string; 
+  badge?: string;
+}> = {
+  snapshot: {
+    label: "Snapshot",
     price: "$0",
-    blurb: "Free mini report to preview how StrataHelix interprets your DNA.",
+    description: "Free mini report to preview how StrataHelix interprets your DNA.",
+    badge: "Browser report",
   },
-  {
-    id: "core",
-    name: "Core",
+  core: {
+    label: "Core",
     price: "$89",
-    blurb: "Full baseline DNA wellness report with action steps.",
+    description: "Full baseline DNA wellness report with action steps.",
+    badge: "One-time",
   },
-  {
-    id: "methylation-plus",
-    name: "Methylation+ Performance",
+  "methylation+": {   // ✅ key now matches PackageId
+    label: "Methylation+ Performance",
     price: "$149",
-    blurb: "Deeper methylation, performance, and supplement strategy.",
+    description: "Deeper methylation, performance, and supplement strategy.",
+    badge: "One-time",
   },
-  {
-    id: "elite",
-    name: "Elite",
+  elite: {
+    label: "Elite",
     price: "$219",
-    blurb:
-      "Full-stack blueprint with recovery, cardio-metabolic and stack layouts.",
+    description: "Full-stack blueprint with recovery, cardio-metabolic and stack layouts.",
+    badge: "One-time",
   },
-];
-
-type UploadClientPageProps = {
-  initialPackage: PackageId;
 };
 
-export default function UploadClientPage({ initialPackage }: UploadClientPageProps) {
-  const [selectedPkg, setSelectedPkg] = useState<PackageId>(initialPackage);
-  const [file, setFile] = useState<File | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [aiReport, setAiReport] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const nextFile = e.target.files?.[0] || null;
-    setFile(nextFile);
-    setFileName(nextFile ? nextFile.name : null);
-    setStatus(null);
-    setAiReport(null);
+interface UploadClientPageProps {
+  initialPackage: PackageId;
+}
+
+export default function UploadClientPage({
+  initialPackage,
+}: UploadClientPageProps) {
+  const [selectedPackage, setSelectedPackage] =
+    useState<PackageId>(initialPackage);
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [report, setReport] = useState<string | null>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setFile(f);
+    setStatus("");
+    setError(null);
+    setReport(null);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setError(null);
+    setReport(null);
 
     if (!file) {
-      setStatus("Please choose a raw DNA file before continuing.");
+      setError("Please select a raw DNA text file before continuing.");
       return;
     }
 
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("package", selectedPackage);
+
+    setIsSubmitting(true);
+    setStatus("Uploading file and generating report…");
+
     try {
-      setIsSubmitting(true);
-      setStatus("Uploading file and generating AI report…");
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("package", selectedPkg);
-
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Upload error:", errorText);
-        setStatus("Upload or report generation failed. Please try again.");
-        return;
+      const data = await res.json().catch(() => null);
+      console.log("Upload response:", data);
+
+      if (!res.ok || !data) {
+        const msg =
+          data?.error ||
+          `Upload or report generation failed (status ${res.status}).`;
+        throw new Error(msg);
       }
 
-      const data = await res.json();
-
-      if (!data.ok) {
-        console.error("Upload API returned not-ok:", data);
-        setStatus("Upload or report generation failed. Please try again.");
-        return;
+      // Keep the green banner behavior
+      if (data.message) {
+        setStatus(data.message);
+      } else {
+        const sizeKB = Math.round(file.size / 1024);
+        setStatus(
+          `Upload complete for "${file.name}" (${sizeKB} KB). Report generated.`
+        );
       }
 
-      setAiReport(data.report ?? "");
-      setStatus(
-        `Upload complete for “${file.name}” (${data.fileSizeBytes} bytes). The backend has your DNA file and package = ${selectedPkg}. In the full app, this is where your report job would be queued for AI generation.`
+      // New: capture the AI report text (may be null if demo mode)
+      setReport(typeof data.report === "string" ? data.report : null);
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      setError(
+        err?.message ||
+          "Upload or report generation failed. Please try again."
       );
-    } catch (error) {
-      console.error("Unexpected error during upload:", error);
-      setStatus("Unexpected error. Please try again.");
+      setStatus("");
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  function handleCopyReport() {
-    if (!aiReport) return;
-    navigator.clipboard.writeText(aiReport).catch((err) => {
-      console.error("Failed to copy report:", err);
-    });
-  }
-
-  function handleDownloadReport() {
-    if (!aiReport) return;
-    const blob = new Blob([aiReport], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "stratahelix-report.txt";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  const currentPackage = PACKAGES.find((p) => p.id === selectedPkg);
-
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12 space-y-10">
-      {/* HEADER */}
-      <section className="space-y-3">
-        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
-          Upload your raw DNA and choose your StrataHelix report.
-        </h1>
-        <p className="text-sm sm:text-base text-[#9CA3AF] max-w-3xl">
-          We currently support raw DNA files from major platforms such as
-          23andMe and AncestryDNA. You’ll upload your file once, select a report
-          tier, and we’ll use AI to generate a non-medical wellness report
-          focused on metabolism, training, recovery, sleep, methylation, and
-          supplement strategy.
-        </p>
-        <p className="text-[11px] text-[#6B7280]">
-          Educational only. Not a medical service. No diagnoses, no disease risk
-          predictions.
-        </p>
-      </section>
+    <div className="min-h-screen bg-[#020617] text-slate-50">
+      <main className="mx-auto max-w-6xl px-4 py-12">
+        {/* Header copy */}
+        <header className="mb-10 space-y-4">
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+            Step 1 · Upload DNA
+          </h1>
+          <p className="max-w-3xl text-sm sm:text-base text-slate-300">
+            Download your raw DNA file from your provider (23andMe, AncestryDNA,
+            etc.) and upload it here. We don&apos;t accept screenshots or PDF
+            summaries—only the raw text file.
+          </p>
+        </header>
 
-      {/* LAYOUT: left = form, right = packages */}
-      <section className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] items-start">
-        {/* LEFT: FILE + SUMMARY */}
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-6 rounded-xl border border-[#1F2933] bg-[#020617] p-6"
-        >
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold tracking-tight">
-              Step 1 · Upload DNA
-            </h2>
-            <p className="text-xs text-[#9CA3AF]">
-              Download your raw DNA file from your provider (23andMe,
-              AncestryDNA, etc.) and upload it here. We don’t accept screenshots
-              or PDF summaries—only the raw text file.
-            </p>
-          </div>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          {/* LEFT: Upload + status + report viewer */}
+          <section className="space-y-6">
+            {/* Upload card */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 shadow-xl shadow-slate-900/40">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Raw DNA file */}
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-4">
+                    Raw DNA file
+                  </h2>
+                  <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/60 p-6">
+                    <p className="mb-3 text-sm text-slate-300">
+                      Accepted: raw DNA text files from 23andMe, AncestryDNA,
+                      and similar platforms (usually <code>.txt</code>).
+                    </p>
 
-          <div className="space-y-3">
-            <label className="block text-xs font-medium text-[#D1D5DB]">
-              Raw DNA file
-            </label>
-            <label className="flex cursor-pointer flex-col items-start justify-center gap-2 rounded-lg border border-dashed border-[#374151] bg-[#020617] px-4 py-5 text-xs text-[#9CA3AF] hover:border-[#27E0C0]/60 hover:bg-[#020617]">
-              <span className="font-medium text-[#F9FAFB]">
-                {fileName ? "File selected" : "Click to choose file"}
-              </span>
-              <span className="text-[11px]">
-                Accepted: raw DNA text files from 23andMe, AncestryDNA, and
-                similar platforms (usually <code>.txt</code>).
-              </span>
-              <input
-                type="file"
-                accept=".txt,.csv"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-            </label>
-            {fileName && (
-              <p className="text-[11px] text-[#27E0C0]">
-                Selected: <span className="font-medium">{fileName}</span>
-              </p>
-            )}
-          </div>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-cyan-500 px-5 py-2 text-sm font-semibold text-slate-950 shadow hover:bg-cyan-400 transition">
+                        <span>Select DNA text file</span>
+                        <input
+                          type="file"
+                          accept=".txt,.csv,.tsv"
+                          className="hidden"
+                          onChange={handleFileChange}
+                        />
+                      </label>
 
-          <div className="space-y-2 pt-2">
-            <h3 className="text-sm font-semibold tracking-tight">
-              Step 2 · Confirm report tier
-            </h3>
-            <p className="text-xs text-[#9CA3AF]">
-              You’ve currently selected:{" "}
-              <span className="font-semibold text-[#F9FAFB]">
-                {currentPackage?.name}
-              </span>{" "}
-              ({currentPackage?.price}). You can change this on the right before
-              submitting.
-            </p>
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="mt-4 inline-flex items-center justify-center rounded-md bg-[#27E0C0] px-5 py-2.5 text-sm font-medium text-[#0B1014] hover:opacity-90 transition disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {isSubmitting
-              ? "Uploading & generating report…"
-              : "Continue with this file & tier"}
-          </button>
-
-          {status && (
-            <p className="mt-3 text-[11px] text-[#9CA3AF] whitespace-pre-line">
-              {status}
-            </p>
-          )}
-        </form>
-
-        {/* RIGHT: PACKAGE SELECTOR */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold tracking-tight">
-              Choose your report
-            </h2>
-            <span className="text-[11px] text-[#6B7280]">
-              You can start free and upgrade later.
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {PACKAGES.map((pkg) => {
-              const isSelected = pkg.id === selectedPkg;
-              return (
-                <button
-                  key={pkg.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedPkg(pkg.id);
-                    setStatus(null);
-                    setAiReport(null);
-                  }}
-                  className={`w-full rounded-lg border px-4 py-3 text-left text-xs transition ${
-                    isSelected
-                      ? "border-[#27E0C0] bg-[#020617] shadow-[0_0_0_1px_rgba(39,224,192,0.3)]"
-                      : "border-[#1F2933] bg-[#020617] hover:border-[#27E0C0]/60"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-[#F9FAFB]">
-                        {pkg.name}
-                      </p>
-                      <p className="text-[11px] text-[#9CA3AF]">{pkg.blurb}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-[#F9FAFB]">
-                        {pkg.price}
-                      </p>
-                      <p className="text-[11px] text-[#6B7280]">
-                        {pkg.id === "snapshot" ? "Browser report" : "One-time"}
-                      </p>
+                      <div className="text-xs text-slate-400">
+                        {file ? (
+                          <>
+                            Selected:{" "}
+                            <span className="font-medium text-cyan-300">
+                              {file.name}
+                            </span>
+                          </>
+                        ) : (
+                          <>No file selected yet.</>
+                        )}
+                      </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Step 2 copy */}
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
+                    Step 2 · Confirm report tier
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    You&apos;ve currently selected:{" "}
+                    <span className="font-semibold text-cyan-300">
+                      {PACKAGE_DETAILS[selectedPackage].label}
+                    </span>
+                    . You can change this on the right before submitting.
+                  </p>
+                </div>
+
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !file}
+                  className="inline-flex items-center justify-center rounded-full bg-cyan-500 px-6 py-2.5 text-sm font-semibold text-slate-950 shadow disabled:cursor-not-allowed disabled:opacity-60 hover:bg-cyan-400 transition"
+                >
+                  {isSubmitting
+                    ? "Uploading & generating report…"
+                    : "Continue with this file & tier"}
                 </button>
-              );
-            })}
-          </div>
 
-          <p className="text-[11px] text-[#6B7280]">
-            In the production version, this page will connect your chosen
-            package to a secure checkout (for paid tiers) and then trigger
-            report generation once your file is validated.
-          </p>
-        </div>
-      </section>
-
-      {/* AI REPORT OUTPUT */}
-      {aiReport && (
-        <section className="space-y-3 rounded-xl border border-[#1F2933] bg-[#020617] p-6">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-[#F9FAFB]">
-              AI-generated draft report (developer preview)
-            </h2>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleCopyReport}
-                className="inline-flex items-center justify-center rounded-md border border-[#1F2933] px-3 py-1.5 text-[11px] font-medium text-[#F9FAFB] hover:border-[#27E0C0]/80"
-              >
-                Copy report
-              </button>
-              <button
-                type="button"
-                onClick={handleDownloadReport}
-                className="inline-flex items-center justify-center rounded-md bg-[#27E0C0] px-3 py-1.5 text-[11px] font-medium text-[#0B1014] hover:opacity-90"
-              >
-                Download .txt
-              </button>
+                {/* Status + error banners */}
+                <div className="space-y-3">
+                  {status && (
+                    <div className="rounded-xl border border-emerald-600/70 bg-emerald-900/30 px-4 py-3 text-xs text-emerald-200">
+                      {status}
+                    </div>
+                  )}
+                  {error && (
+                    <div className="rounded-xl border border-rose-600/70 bg-rose-950/40 px-4 py-3 text-xs text-rose-200">
+                      {error}
+                    </div>
+                  )}
+                </div>
+              </form>
             </div>
-          </div>
-          <p className="text-[11px] text-[#6B7280] max-w-2xl">
-            This is the raw text draft returned from the StrataHelix AI backend.
-            In the real product, this will be rendered as a polished report or
-            PDF.
-          </p>
-          <textarea
-            readOnly
-            value={aiReport}
-            className="mt-2 h-64 w-full resize-y rounded-md border border-[#1F2933] bg-[#020617] p-3 text-xs text-[#E5E7EB] font-mono"
-          />
-        </section>
-      )}
+
+            {/* Report viewer */}
+            {report && (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-6 shadow-xl shadow-slate-900/40">
+                <h2 className="mb-3 text-sm font-semibold tracking-tight text-slate-100">
+                  Snapshot report preview
+                </h2>
+                <p className="mb-3 text-xs text-slate-400">
+                  This is the AI-generated interpretation of your uploaded DNA
+                  file based on the{" "}
+                  <span className="font-semibold text-cyan-300">
+                    {PACKAGE_DETAILS[selectedPackage].label}
+                  </span>{" "}
+                  tier. Educational only – not medical advice.
+                </p>
+                <div className="max-h-[28rem] overflow-auto rounded-xl border border-slate-800/70 bg-slate-950/80 p-4 text-xs leading-relaxed text-slate-200 whitespace-pre-wrap">
+                  {report}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* RIGHT: Package selector */}
+          <aside className="space-y-4">
+            <div className="mb-2">
+              <h2 className="text-sm font-semibold tracking-tight">
+                Choose your report
+              </h2>
+              <p className="text-xs text-slate-400">
+                You can start free and upgrade later.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {(Object.keys(PACKAGE_DETAILS) as PackageId[]).map((id) => {
+                const pkg = PACKAGE_DETAILS[id];
+                const isActive = selectedPackage === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPackage(id);
+                      setReport(null); // reset any old report if they change tiers
+                    }}
+                    className={[
+                      "flex w-full items-center justify-between rounded-2xl border px-4 py-4 text-left transition",
+                      isActive
+                        ? "border-cyan-500/80 bg-cyan-950/40 shadow-[0_0_0_1px_rgba(34,211,238,0.3)]"
+                        : "border-slate-800 bg-slate-900/40 hover:border-slate-600 hover:bg-slate-900/80",
+                    ].join(" ")}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">
+                          {pkg.label}
+                        </span>
+                        {pkg.badge && (
+                          <span className="rounded-full border border-slate-700 bg-slate-900/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-300">
+                            {pkg.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        {pkg.description}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-slate-50">
+                        {pkg.price}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="pt-2 text-[10px] leading-relaxed text-slate-500">
+              In the production version, this column will connect your chosen
+              tier to a secure checkout (for paid tiers) and then trigger report
+              generation once your file is validated. Educational only. Not a
+              medical service. No diagnoses, no disease risk predictions.
+            </p>
+          </aside>
+        </div>
+      </main>
     </div>
   );
 }
